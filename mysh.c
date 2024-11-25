@@ -79,92 +79,71 @@ int main(int argc, char **argv) {
 void traverse_and_execute(const char *path) {
     DIR *dir = opendir(path);
     if (!dir) {
-        perror("opendir failed");
+        perror("Error opening directory");
         return;
     }
-
     struct dirent *entry;
-    char full_path[MAX_PATH_LEN];
-
-    while ((entry = readdir(dir)) != NULL) {
-        // Skip "." and ".."
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-
-        snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
-
-        struct stat entry_stat;
-        if (stat(full_path, &entry_stat) == 0) {
-            if (S_ISDIR(entry_stat.st_mode)) {
-                // Found a directory, run `mysh` recursively
-                printf("Entering directory: %s\n", full_path);
-                pid_t pid = fork();
-                if (pid == 0) {
-                    // In child process
-                    execl("./mysh", "./mysh", full_path, (char *)NULL);
-                    perror("execl failed");
-                    exit(1);
-                } else if (pid > 0) {
-                    // In parent process
-                    int status;
-                    waitpid(pid, &status, 0);
-                } else {
-                    perror("Fork failed");
-                }
+    char filepath[MAX_PATH_LEN];
+    while ((entry = readdir(dir))) {
+        if (entry->d_type == DT_REG) {
+            snprintf(filepath, MAX_PATH_LEN, "%s/%s", path, entry->d_name);
+            FILE *file = fopen(filepath, "r");
+            if (!file) {
+                perror("Error opening file");
+                continue;
             }
+            char input[MAX_CMD_LEN];
+            while (fgets(input, MAX_CMD_LEN, file)) {
+                input[strcspn(input, "\n")] = 0; // Remove newline
+                parse_and_execute(input, 0);    // Process command in batch mode
+            }
+            fclose(file);
         }
     }
-
     closedir(dir);
 }
 
+
 void parse_and_execute(char *input, int interactive) {
     char *args[MAX_ARGS];
-    char *token = strtok(input, " ");
-    int i = 0;
+    int arg_count = 0;
 
-    while (token != NULL && i < MAX_ARGS - 1) {
-        args[i++] = token;
+    // Tokenize input into arguments
+    char *token = strtok(input, " ");
+    while (token && arg_count < MAX_ARGS - 1) {
+        args[arg_count++] = token;
         token = strtok(NULL, " ");
     }
-    args[i] = NULL;
+    args[arg_count] = NULL;
 
-    if (args[0] == NULL) {
-        return;  // Empty command
-    }
+    // Handle empty input
+    if (arg_count == 0) return;
 
-    // Built-in commands
+    // Handle built-in commands
     if (strcmp(args[0], "cd") == 0) {
-        if (i != 2) {
+        if (arg_count != 2) {
             fprintf(stderr, "cd: Invalid number of arguments\n");
         } else {
             change_directory(args[1]);
         }
-    } else if (strcmp(args[0], "pwd") == 0) {
-        print_working_directory();
-    } else if (strcmp(args[0], "exit") == 0) {
-        handle_exit(args);
-    } else if (strcmp(args[0], "which") == 0) {
-        handle_which(args);
-    } else {
-        // Wildcard expansion
-        char *expanded_args[MAX_ARGS];
-        int expanded_args_count = 0;
-
-        for (int j = 0; args[j] != NULL; j++) {
-            if (strchr(args[j], '*') != NULL) {
-                expanded_args_count += wildcard_expansion(args[j], expanded_args + expanded_args_count);
-            } else {
-                expanded_args[expanded_args_count++] = args[j];
-            }
-        }
-        expanded_args[expanded_args_count] = NULL;
-
-        // Execute command (external)
-        execute_command(args[0], expanded_args);
+        return;
     }
+    if (strcmp(args[0], "pwd") == 0) {
+        print_working_directory();
+        return;
+    }
+    if (strcmp(args[0], "exit") == 0) {
+        handle_exit(args);
+    }
+    if (strcmp(args[0], "which") == 0) {
+        handle_which(args);
+        return;
+    }
+
+    // Handle external commands
+    execute_command(args[0], args);
 }
+
 
 void execute_command(char *command, char **args) {
     pid_t pid = fork();
@@ -239,25 +218,17 @@ void handle_which(char **args) {
 }
 
 int wildcard_expansion(char *pattern, char **args) {
-    struct dirent *entry;
     DIR *dir = opendir(".");
+    if (!dir) return 0;
+
+    struct dirent *entry;
     int count = 0;
 
-    if (dir == NULL) {
-        perror("opendir failed");
-        return 0;
-    }
-
-    while ((entry = readdir(dir)) != NULL) {
+    while ((entry = readdir(dir))) {
         if (fnmatch(pattern, entry->d_name, 0) == 0) {
-            args[count++] = entry->d_name;
+            args[count++] = strdup(entry->d_name); // Add matching file to args
         }
     }
     closedir(dir);
-
-    if (count == 0) {
-        args[count++] = pattern;  // No matches, pass original token
-    }
-
     return count;
 }
