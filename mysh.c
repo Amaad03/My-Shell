@@ -233,6 +233,12 @@ void handle_redirection(char **args, int *stdin_fd, int *stdout_fd, int *stderr_
 void change_directory(char *path) {
     char cwd[MAX_PATH_LEN];
 
+    // Get the current directory before attempting to change
+    if (getcwd(cwd, sizeof(cwd)) == NULL) {
+        perror("getcwd failed");
+        return;
+    }
+
     if (path == NULL) {
         fprintf(stderr, "cd: Missing argument\n");
         return;
@@ -243,21 +249,20 @@ void change_directory(char *path) {
         if (prev_cwd[0] == '\0') {
             fprintf(stderr, "cd: No previous directory\n");
         } else {
-            if (chdir(prev_cwd) != 0) {
-                perror("cd failed");
+            if (chdir(prev_cwd) == 0) {
+                printf("%s\n", prev_cwd); // Print the previous directory
+                strncpy(prev_cwd, cwd, sizeof(prev_cwd) - 1); // Update prev_cwd to the current directory
+                prev_cwd[sizeof(prev_cwd) - 1] = '\0'; // Null-terminate
             } else {
-                // Update prev_cwd to the current directory
-                printf("%s\n", prev_cwd);
+                perror("cd failed");
             }
         }
     } else {
-        // Store the current directory before changing
-        if (getcwd(cwd, sizeof(cwd)) != NULL) {
-            strncpy(prev_cwd, cwd, sizeof(prev_cwd) - 1);  // Store the current directory in prev_cwd
-        }
-
         // Attempt to change to the desired directory
-        if (chdir(path) != 0) {
+        if (chdir(path) == 0) {
+            strncpy(prev_cwd, cwd, sizeof(prev_cwd) - 1); // Update prev_cwd to the current directory
+            prev_cwd[sizeof(prev_cwd) - 1] = '\0'; // Null-terminate
+        } else {
             perror("cd failed");
         }
     }
