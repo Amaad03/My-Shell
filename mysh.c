@@ -15,14 +15,16 @@
 #define MAX_CMD_LEN 1024
 #define MAX_PATH_LEN 1024
 
-void execute_command(char *command, char **args);
+void execute_command(char **args);
 void change_directory(char *path);
 void print_working_directory();
 void handle_exit(char **args);
 void handle_which(char **args);
 int wildcard_expansion(char *pattern, char **args);
+void free_args(char **args, int count);
 void parse_and_execute(char *input, int interactive);
 void traverse_and_execute(const char *path);
+void handle_redirection(char **args, int *stdin_fd, int *stdout_fd, int *stderr_fd);
 
 int main(int argc, char **argv) {
     char input[MAX_CMD_LEN];
@@ -103,7 +105,6 @@ void traverse_and_execute(const char *path) {
     closedir(dir);
 }
 
-
 void parse_and_execute(char *input, int interactive) {
     char *args[MAX_ARGS];
     int arg_count = 0;
@@ -141,11 +142,37 @@ void parse_and_execute(char *input, int interactive) {
     }
 
     // Handle external commands
-    execute_command(args[0], args);
+    int stdin_fd = -1, stdout_fd = -1, stderr_fd = -1;
+    handle_redirection(args, &stdin_fd, &stdout_fd, &stderr_fd);
+    execute_command(args);
+
+    // Restore original stdin, stdout, and stderr
+    if (stdin_fd >= 0) dup2(stdin_fd, STDIN_FILENO);
+    if (stdout_fd >= 0) dup2(stdout_fd, STDOUT_FILENO);
+    if (stderr_fd >= 0) dup2(stderr_fd, STDERR_FILENO);
 }
 
+void execute_command(char **args) {
+    char *command = args[0];
+    int wildcard_expanded = 0;
+    char *expanded_args[MAX_ARGS];
 
-void execute_command(char *command, char **args) {
+    // Check for wildcard in the arguments
+    for (int i = 0; args[i] != NULL; i++) {
+        if (strchr(args[i], '*') || strchr(args[i], '?')) {
+            int expanded_count = wildcard_expansion(args[i], expanded_args);
+            if (expanded_count > 0) {
+                wildcard_expanded = 1;
+                args[i] = NULL; // Replace the wildcard pattern with the expanded args
+                for (int j = 0; j < expanded_count; j++) {
+                    args[i++] = expanded_args[j];
+                }
+                args[i] = NULL; // Null-terminate the updated argument list
+                break;
+            }
+        }
+    }
+
     pid_t pid = fork();
     if (pid < 0) {
         perror("Fork failed");
@@ -155,7 +182,6 @@ void execute_command(char *command, char **args) {
     if (pid == 0) {
         // Child process
         execvp(command, args);
-        // If execvp returns, there was an error
         perror("Exec failed");
         exit(1);
     } else {
@@ -163,12 +189,40 @@ void execute_command(char *command, char **args) {
         int status;
         waitpid(pid, &status, 0);
 
+        if (wildcard_expanded) {
+            free_args(expanded_args, MAX_ARGS);
+        }
+
         if (WIFEXITED(status)) {
             if (WEXITSTATUS(status) != 0) {
                 fprintf(stderr, "Command failed with exit code: %d\n", WEXITSTATUS(status));
             }
         } else if (WIFSIGNALED(status)) {
             fprintf(stderr, "Terminated by signal: %d\n", WTERMSIG(status));
+        }
+    }
+}
+
+void handle_redirection(char **args, int *stdin_fd, int *stdout_fd, int *stderr_fd) {
+    for (int i = 0; args[i] != NULL; i++) {
+        if (strcmp(args[i], ">") == 0) {
+            *stdout_fd = open(args[i + 1], O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (*stdout_fd < 0) {
+                perror("Error opening file for redirection");
+                exit(1);
+            }
+            dup2(*stdout_fd, STDOUT_FILENO);
+            args[i] = NULL; // Remove redirection part
+            break;
+        } else if (strcmp(args[i], "<") == 0) {
+            *stdin_fd = open(args[i + 1], O_RDONLY);
+            if (*stdin_fd < 0) {
+                perror("Error opening file for redirection");
+                exit(1);
+            }
+            dup2(*stdin_fd, STDIN_FILENO);
+            args[i] = NULL; // Remove redirection part
+            break;
         }
     }
 }
@@ -189,11 +243,6 @@ void print_working_directory() {
 }
 
 void handle_exit(char **args) {
-    if (args[1] != NULL) {
-        for (int i = 1; args[i] != NULL; i++) {
-            printf("%s ", args[i]);
-        }
-    }
     exit(0);
 }
 
@@ -217,18 +266,35 @@ void handle_which(char **args) {
     printf("which: %s not found\n", args[1]);
 }
 
+void free_args(char **args, int count) {
+    for (int i = 0; i < count; i++) {
+        free(args[i]);
+    }
+}
+
 int wildcard_expansion(char *pattern, char **args) {
     DIR *dir = opendir(".");
-    if (!dir) return 0;
+    if (!dir) {
+        perror("Error opening directory");
+        return 0;
+    }
 
     struct dirent *entry;
     int count = 0;
 
     while ((entry = readdir(dir))) {
         if (fnmatch(pattern, entry->d_name, 0) == 0) {
-            args[count++] = strdup(entry->d_name); // Add matching file to args
+            args[count] = strdup(entry->d_name); // Dynamically allocate and add file to args
+            if (!args[count]) {
+                perror("Memory allocation error");
+                free_args(args, count);
+                closedir(dir);
+                return 0;
+            }
+            count++;
         }
     }
     closedir(dir);
+    args[count] = NULL; // Null-terminate the arguments
     return count;
 }

@@ -1,13 +1,11 @@
 echo ====================
-echo BASIC COMMAND TEST
+echo REDIRECT TESTS
 echo ====================
-pwd
-cd scripts
-pwd
-ls
-cd ..
-pwd
-ls
-cd ./scripts/../
-pwd
-ls
+mkdir redirect_tests
+cd redirect_tests
+echo foo bar > f0
+echo foo > f1 bar
+echo > f2 foo bar
+cat < f0
+cat < f0 > f3
+cat > f4 < f0
