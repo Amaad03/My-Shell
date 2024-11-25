@@ -14,6 +14,9 @@
 #define MAX_ARGS 64
 #define MAX_CMD_LEN 1024
 #define MAX_PATH_LEN 1024
+char prev_cwd[MAX_PATH_LEN];  // To store the previous current working directory
+
+
 
 void execute_command(char **args);
 void change_directory(char *path);
@@ -228,10 +231,38 @@ void handle_redirection(char **args, int *stdin_fd, int *stdout_fd, int *stderr_
 }
 
 void change_directory(char *path) {
-    if (chdir(path) != 0) {
-        perror("cd failed");
+    char cwd[MAX_PATH_LEN];
+
+    if (path == NULL) {
+        fprintf(stderr, "cd: Missing argument\n");
+        return;
+    }
+
+    if (strcmp(path, "-") == 0) {
+        // If the user types "cd -", switch back to the previous directory
+        if (prev_cwd[0] == '\0') {
+            fprintf(stderr, "cd: No previous directory\n");
+        } else {
+            if (chdir(prev_cwd) != 0) {
+                perror("cd failed");
+            } else {
+                // Update prev_cwd to the current directory
+                printf("%s\n", prev_cwd);
+            }
+        }
+    } else {
+        // Store the current directory before changing
+        if (getcwd(cwd, sizeof(cwd)) != NULL) {
+            strncpy(prev_cwd, cwd, sizeof(prev_cwd) - 1);  // Store the current directory in prev_cwd
+        }
+
+        // Attempt to change to the desired directory
+        if (chdir(path) != 0) {
+            perror("cd failed");
+        }
     }
 }
+
 
 void print_working_directory() {
     char cwd[MAX_PATH_LEN];

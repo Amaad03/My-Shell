@@ -1,11 +1,11 @@
 echo ====================
-echo REDIRECT TESTS
+echo PIPE TEST
 echo ====================
-mkdir redirect_tests
-cd redirect_tests
-echo foo bar > f0
-echo foo > f1 bar
-echo > f2 foo bar
-cat < f0
-cat < f0 > f3
-cat > f4 < f0
+cd pipe_tests
+cat p1 | sort
+echo ====================
+echo MULTIPLE PIPE TEST
+echo ====================
+cat p1 | sort | uniq
+echo ----------------
+cat p1 | sort | cat | uniq
