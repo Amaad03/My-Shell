@@ -22,6 +22,7 @@ void handle_exit(char **args);
 void handle_which(char **args);
 int wildcard_expansion(char *pattern, char **args);
 void parse_and_execute(char *input, int interactive);
+void traverse_and_execute(const char *path);
 
 int main(int argc, char **argv) {
     char input[MAX_CMD_LEN];
@@ -46,20 +47,26 @@ int main(int argc, char **argv) {
             parse_and_execute(input, interactive);
         }
     } else {
-        // Batch mode: Read commands from a file
-        FILE *file = fopen(argv[1], "r");
-        if (!file) {
-            perror("Error opening file");
-            exit(1);
-        }
+        struct stat path_stat;
+        if (stat(argv[1], &path_stat) == 0 && S_ISDIR(path_stat.st_mode)) {
+            // If input is a directory, traverse and execute
+            traverse_and_execute(argv[1]);
+        } else {
+            // Batch mode: Read commands from a file
+            FILE *file = fopen(argv[1], "r");
+            if (!file) {
+                perror("Error opening file");
+                exit(1);
+            }
 
-        while (fgets(input, MAX_CMD_LEN, file)) {
-            // Remove trailing newline
-            input[strcspn(input, "\n")] = 0;
-            parse_and_execute(input, 0);
-        }
+            while (fgets(input, MAX_CMD_LEN, file)) {
+                // Remove trailing newline
+                input[strcspn(input, "\n")] = 0;
+                parse_and_execute(input, 0);
+            }
 
-        fclose(file);
+            fclose(file);
+        }
     }
 
     if (interactive) {
@@ -67,6 +74,49 @@ int main(int argc, char **argv) {
     }
 
     return 0;
+}
+
+void traverse_and_execute(const char *path) {
+    DIR *dir = opendir(path);
+    if (!dir) {
+        perror("opendir failed");
+        return;
+    }
+
+    struct dirent *entry;
+    char full_path[MAX_PATH_LEN];
+
+    while ((entry = readdir(dir)) != NULL) {
+        // Skip "." and ".."
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
+
+        struct stat entry_stat;
+        if (stat(full_path, &entry_stat) == 0) {
+            if (S_ISDIR(entry_stat.st_mode)) {
+                // Found a directory, run `mysh` recursively
+                printf("Entering directory: %s\n", full_path);
+                pid_t pid = fork();
+                if (pid == 0) {
+                    // In child process
+                    execl("./mysh", "./mysh", full_path, (char *)NULL);
+                    perror("execl failed");
+                    exit(1);
+                } else if (pid > 0) {
+                    // In parent process
+                    int status;
+                    waitpid(pid, &status, 0);
+                } else {
+                    perror("Fork failed");
+                }
+            }
+        }
+    }
+
+    closedir(dir);
 }
 
 void parse_and_execute(char *input, int interactive) {
@@ -125,8 +175,8 @@ void execute_command(char *command, char **args) {
 
     if (pid == 0) {
         // Child process
-        execv(command, args);
-        // If execv returns, there was an error
+        execvp(command, args);
+        // If execvp returns, there was an error
         perror("Exec failed");
         exit(1);
     } else {
