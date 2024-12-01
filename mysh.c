@@ -31,18 +31,21 @@ void handle_redirection(char **args, int *stdin_fd, int *stdout_fd);
 
 int main(int argc, char **argv) {
     char input[MAX_CMD_LEN];
-    int interactive = isatty(fileno(stdin));
+    int interactive = 0;
 
-    // Welcome message only in interactive mode
+    // Check if we're in batch mode (argc > 1 means we have a file/argument)
+    if (argc == 1) {
+        interactive = 1;  // No arguments means it's interactive
+    }
+
+    // Print welcome message only in interactive mode
     if (interactive) {
         printf("Welcome to my Shell.\n");
     }
 
-    if (argc == 1) {  // Interactive or piped input
+    if (argc == 1) {  // Interactive mode
         while (1) {
-            if (interactive) {
-                printf("mysh> ");
-            }
+            printf("mysh> ");  // Print the prompt only in interactive mode
 
             if (!fgets(input, MAX_CMD_LEN, stdin)) {
                 break;  // Exit loop if EOF or read error
@@ -50,9 +53,13 @@ int main(int argc, char **argv) {
 
             // Remove trailing newline
             input[strcspn(input, "\n")] = 0;
+            if (strcmp(input, "exit") == 0) {
+                break;  // Exit the shell if the user types 'exit'
+            }
+
             parse_and_execute(input, interactive);
         }
-    } else {
+    } else {  // Batch mode: We assume the first argument is a file
         struct stat path_stat;
         if (stat(argv[1], &path_stat) == 0 && S_ISDIR(path_stat.st_mode)) {
             // If input is a directory, traverse and execute
@@ -82,6 +89,8 @@ int main(int argc, char **argv) {
 
     return 0;
 }
+
+
 
 
 void traverse_and_execute(const char *path) {
