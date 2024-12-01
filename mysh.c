@@ -22,6 +22,7 @@ void change_directory(char *path);
 void print_working_directory();
 void handle_exit(char **args);
 void handle_which(char **args);
+void handle_pipe(char *input, int interactive);
 int wildcard_expansion(char *pattern, char ***expanded_args);
 void free_args(char **args, int count);
 void parse_and_execute(char *input, int interactive);
@@ -32,18 +33,19 @@ int main(int argc, char **argv) {
     char input[MAX_CMD_LEN];
     int interactive = isatty(fileno(stdin));
 
-    if (interactive && feof(stdin)) {
-        printf("Exiting my shell.\n");
+    // Welcome message only in interactive mode
+    if (interactive) {
+        printf("Welcome to my Shell.\n");
     }
 
-    if (argc == 1) {
+    if (argc == 1) {  // Interactive or piped input
         while (1) {
             if (interactive) {
                 printf("mysh> ");
             }
 
             if (!fgets(input, MAX_CMD_LEN, stdin)) {
-                break;
+                break;  // Exit loop if EOF or read error
             }
 
             // Remove trailing newline
@@ -66,18 +68,21 @@ int main(int argc, char **argv) {
             while (fgets(input, MAX_CMD_LEN, file)) {
                 // Remove trailing newline
                 input[strcspn(input, "\n")] = 0;
-                parse_and_execute(input, 0);    // Process command in batch mode
+                parse_and_execute(input, 0);  // Process command in batch mode
             }
 
             fclose(file);
         }
     }
 
-    if (interactive && feof(stdin)) {
+    // Exit message only in interactive mode
+    if (interactive) {
         printf("Exiting my shell.\n");
     }
+
     return 0;
 }
+
 
 void traverse_and_execute(const char *path) {
     DIR *dir = opendir(path);
@@ -107,6 +112,10 @@ void traverse_and_execute(const char *path) {
 }
 
 void parse_and_execute(char *input, int interactive) {
+    if (strchr(input, '|')) {
+        handle_pipe(input, interactive);
+        return;
+    }
     char *args[MAX_ARGS];
     int arg_count = 0;
 
@@ -237,6 +246,73 @@ int wildcard_expansion(char *pattern, char ***expanded_args) {
     return count;
 }
 
+void handle_pipe(char *input, int interactive) {
+    char *commands[MAX_ARGS];
+    int command_count = 0;
+
+    // Split the input into individual commands by '|'
+    char *command = strtok(input, "|");
+    while (command && command_count < MAX_ARGS - 1) {
+        commands[command_count++] = command;
+        command = strtok(NULL, "|");
+    }
+    commands[command_count] = NULL;
+
+    if (command_count < 2) {
+        fprintf(stderr, "Error: Invalid pipe syntax\n");
+        return;
+    }
+
+    int pipe_fds[2], prev_fd = STDIN_FILENO;
+    for (int i = 0; i < command_count; i++) {
+        if (pipe(pipe_fds) < 0) {
+            perror("Pipe failed");
+            exit(1);
+        }
+
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("Fork failed");
+            exit(1);
+        }
+
+        if (pid == 0) {
+            // Child process
+            if (i > 0) {
+                dup2(prev_fd, STDIN_FILENO); // Read from the previous command's output
+                close(prev_fd);
+            }
+            if (i < command_count - 1) {
+                dup2(pipe_fds[1], STDOUT_FILENO); // Write to the next command's input
+                close(pipe_fds[1]);
+            }
+            close(pipe_fds[0]); // Close unused read end of the pipe
+
+            // Parse the command and arguments
+            char *args[MAX_ARGS];
+            int arg_count = 0;
+            char *token = strtok(commands[i], " ");
+            while (token && arg_count < MAX_ARGS - 1) {
+                args[arg_count++] = token;
+                token = strtok(NULL, " ");
+            }
+            args[arg_count] = NULL;
+
+            // Execute the command
+            execvp(args[0], args);
+            perror("Exec failed");
+            exit(1);
+        } else {
+            // Parent process
+            wait(NULL); // Wait for the child to finish
+            close(pipe_fds[1]); // Close unused write end of the pipe
+            if (i > 0) {
+                close(prev_fd); // Close the previous read end
+            }
+            prev_fd = pipe_fds[0]; // Save the current read end for the next iteration
+        }
+    }
+}
 
 void handle_redirection(char **args, int *stdin_fd, int *stdout_fd) {
     int i = 0;

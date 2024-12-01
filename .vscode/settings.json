@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "*.py": "python",
-        "cstring": "c"
+        "cstring": "c",
+        "wait.h": "c"
     }
 }
