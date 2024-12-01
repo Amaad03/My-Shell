@@ -414,7 +414,6 @@ void handle_exit(char **args) {
 
 void handle_which(char **args) {
     if (args[1] == NULL) {
-        fprintf(stderr, "which: missing operand\n");
         return;
     }
 
@@ -429,15 +428,12 @@ void handle_which(char **args) {
 
         if (access(full_path, F_OK) == 0) {
             printf("%s\n", full_path);
-            free(path_copy); // Free the copy of PATH
+           
             return;
         }
 
         token = strtok(NULL, ":");
     }
-
-    fprintf(stderr, "which: %s not found\n", command);
-    free(path_copy); // Free the copy of PATH
 }
 
 void free_args(char **args, int count) {
