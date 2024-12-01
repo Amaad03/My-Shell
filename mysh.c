@@ -43,18 +43,45 @@ int main(int argc, char **argv) {
         printf("Welcome to my Shell.\n");
     }
 
-    if (argc == 1) {  // Interactive mode
+    if (interactive) {  // Interactive mode
         while (1) {
-            printf("mysh> ");  // Print the prompt only in interactive mode
+            // Print the prompt
+            printf("mysh> ");
+            fflush(stdout);  // Ensure the prompt is printed immediately
 
-            if (!fgets(input, MAX_CMD_LEN, stdin)) {
-                break;  // Exit loop if EOF or read error
+            ssize_t bytes_read = 0;
+            size_t total_read = 0;
+
+            // Use read() to obtain input (the input can be longer than one read call)
+            while (total_read < MAX_CMD_LEN - 1) {
+                bytes_read = read(STDIN_FILENO, input + total_read, MAX_CMD_LEN - total_read - 1);
+                
+                if (bytes_read < 0) {
+                    perror("Error reading input");
+                    exit(1);
+                }
+
+                if (bytes_read == 0) {
+                    break;  // End of input (EOF)
+                }
+
+                total_read += bytes_read;
+
+                // Check if newline is encountered
+                if (strchr(input, '\n')) {
+                    break;  // Exit loop when a newline is encountered
+                }
             }
 
-            // Remove trailing newline
+            // Null-terminate the input string
+            input[total_read] = '\0';
+
+            // Remove trailing newline if it exists
             input[strcspn(input, "\n")] = 0;
+
+            // Exit if user types "exit"
             if (strcmp(input, "exit") == 0) {
-                break;  // Exit the shell if the user types 'exit'
+                break;
             }
 
             parse_and_execute(input, interactive);
@@ -90,9 +117,6 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-
-
-
 void traverse_and_execute(const char *path) {
     DIR *dir = opendir(path);
     if (!dir) {
@@ -119,6 +143,7 @@ void traverse_and_execute(const char *path) {
     }
     closedir(dir);
 }
+
 
 void parse_and_execute(char *input, int interactive) {
     if (strchr(input, '|')) {
