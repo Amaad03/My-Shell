@@ -22,7 +22,7 @@ void change_directory(char *path);
 void print_working_directory();
 void handle_exit(char **args);
 void handle_which(char **args);
-int wildcard_expansion(char *pattern, char **args);
+int wildcard_expansion(char *pattern, char ***expanded_args);
 void free_args(char **args, int count);
 void parse_and_execute(char *input, int interactive);
 void traverse_and_execute(const char *path);
@@ -170,15 +170,14 @@ void parse_and_execute(char *input, int interactive) {
 
 void execute_command(char **args, int interactive) {
     char *command = args[0];
-    int wildcard_expanded = 0;
-    char *expanded_args[MAX_ARGS];
+    char **expanded_args = NULL;
+    int expanded_count = 0;
 
     // Check for wildcard in the arguments
     for (int i = 0; args[i] != NULL; i++) {
         if (strchr(args[i], '*') || strchr(args[i], '?')) {
-            int expanded_count = wildcard_expansion(args[i], expanded_args);
+            expanded_count = wildcard_expansion(args[i], &expanded_args);
             if (expanded_count > 0) {
-                wildcard_expanded = 1;
                 args[i] = NULL; // Replace the wildcard pattern with the expanded args
                 for (int j = 0; j < expanded_count; j++) {
                     args[i++] = expanded_args[j];
@@ -205,8 +204,8 @@ void execute_command(char **args, int interactive) {
         int status;
         waitpid(pid, &status, 0);
 
-        if (wildcard_expanded) {
-            free_args(expanded_args, MAX_ARGS);
+        if (expanded_count > 0) {
+            free_args(expanded_args, expanded_count);
         }
 
         if (WIFEXITED(status)) {
@@ -220,24 +219,24 @@ void execute_command(char **args, int interactive) {
     }
 }
 
-int wildcard_expansion(char *pattern, char **args) {
+int wildcard_expansion(char *pattern, char ***expanded_args) {
     glob_t globbuf;
     int i, count = 0;
 
-    // Use glob to expand the wildcard pattern
     if (glob(pattern, 0, NULL, &globbuf) == 0) {
-        // Copy the expanded matches to the args array
+        *expanded_args = malloc(globbuf.gl_pathc * sizeof(char *));
         for (i = 0; i < globbuf.gl_pathc; i++) {
-            args[count++] = globbuf.gl_pathv[i];
+            (*expanded_args)[count++] = strdup(globbuf.gl_pathv[i]);
         }
     } else {
-        // If no matches, don't add anything
-        args[count++] = pattern;
+        *expanded_args = malloc(sizeof(char *));
+        (*expanded_args)[count++] = strdup(pattern);
     }
 
-    globfree(&globbuf);  // Clean up the glob memory
-    return count;  // Return the number of arguments (including expanded matches)
+    globfree(&globbuf);  
+    return count;
 }
+
 
 void handle_redirection(char **args, int *stdin_fd, int *stdout_fd) {
     int i = 0;
@@ -281,7 +280,6 @@ void handle_redirection(char **args, int *stdin_fd, int *stdout_fd) {
     }
 }
 
-
 void change_directory(char *path) {
     if (chdir(path) == 0) {
         // Store the previous cwd before changing it
@@ -312,7 +310,8 @@ void handle_which(char **args) {
 
     char *command = args[1];
     char *path = getenv("PATH");
-    char *token = strtok(path, ":");
+    char *path_copy = strdup(path); // Create a copy of the PATH to avoid modifying the original
+    char *token = strtok(path_copy, ":");
 
     while (token != NULL) {
         char full_path[MAX_PATH_LEN];
@@ -320,6 +319,7 @@ void handle_which(char **args) {
 
         if (access(full_path, F_OK) == 0) {
             printf("%s\n", full_path);
+            free(path_copy); // Free the copy of PATH
             return;
         }
 
@@ -327,6 +327,7 @@ void handle_which(char **args) {
     }
 
     fprintf(stderr, "which: %s not found\n", command);
+    free(path_copy); // Free the copy of PATH
 }
 
 void free_args(char **args, int count) {
