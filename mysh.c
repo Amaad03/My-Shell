@@ -276,27 +276,24 @@ This function also returns the count, which is the # of matching files. Returnin
 */
 int wildcard_expansion(char *pattern, char ***expanded_args) {
     glob_t globbuf;
-    int ret = glob(pattern, GLOB_NOCHECK, NULL, &globbuf);  // Removed GLOB_TILDE
-
+    int ret = glob(pattern, GLOB_NOCHECK, NULL, &globbuf);  
     if (ret == 0) {
         int count = 0;
-        *expanded_args = malloc((globbuf.gl_pathc + 1) * sizeof(char *)); // +1 for NULL termination
+        *expanded_args = malloc((globbuf.gl_pathc + 1) * sizeof(char *));
         if (!*expanded_args) {
             perror("malloc failed");
             globfree(&globbuf);
-            return -1;  // Return an error code for memory allocation failure
+            return -1;  
         }
 
         for (int i = 0; i < globbuf.gl_pathc; i++) {
-            (*expanded_args)[count++] = strdup(globbuf.gl_pathv[i]); // strdup allocates memory
+            (*expanded_args)[count++] = strdup(globbuf.gl_pathv[i]);
         }
-        (*expanded_args)[count] = NULL;  // Null-terminate the array
+        (*expanded_args)[count] = NULL;  
 
-        globfree(&globbuf);  // Free memory used by glob
-        return count;  // Return the count of expanded arguments
+        globfree(&globbuf);  
+        return count;  
     }
-
-    // If glob fails or no matches found, return 0
     return 0;
 }
 
@@ -464,7 +461,7 @@ void handle_which(char **args) {
         fprintf(stderr, "PATH environment variable not set\n");
         return;
     }
-    
+
     char *path_copy = strdup(path); 
     if (path_copy == NULL) {
         perror("strdup failed");
