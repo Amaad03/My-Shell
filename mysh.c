@@ -39,54 +39,51 @@ int main(int argc, char **argv) {
     }
 
     // Print welcome message only in interactive mode
-    if (interactive) {
-        printf("Welcome to my Shell.\n");
-    }
-
     if (interactive) {  // Interactive mode
-        while (1) {
-            // Print the prompt
-            printf("mysh> ");
-            fflush(stdout);  // Ensure the prompt is printed immediately
+    while (1) {
+        // Print the prompt
+        printf("mysh> ");
+        fflush(stdout);  // Ensure the prompt is printed immediately
 
-            ssize_t bytes_read = 0;
-            size_t total_read = 0;
+        ssize_t bytes_read = 0;
+        size_t total_read = 0;
 
-            // Use read() to obtain input (the input can be longer than one read call)
-            while (total_read < MAX_CMD_LEN - 1) {
-                bytes_read = read(STDIN_FILENO, input + total_read, MAX_CMD_LEN - total_read - 1);
-                
-                if (bytes_read < 0) {
-                    perror("Error reading input");
-                    exit(1);
-                }
-
-                if (bytes_read == 0) {
-                    break;  // End of input (EOF)
-                }
-
-                total_read += bytes_read;
-
-                // Check if newline is encountered
-                if (strchr(input, '\n')) {
-                    break;  // Exit loop when a newline is encountered
-                }
+        // Use read() to obtain input (the input can be longer than one read call)
+        while (total_read < MAX_CMD_LEN - 1) {
+            bytes_read = read(STDIN_FILENO, input + total_read, MAX_CMD_LEN - total_read - 1);
+            
+            if (bytes_read < 0) {
+                perror("Error reading input");
+                exit(1);
             }
 
-            // Null-terminate the input string
-            input[total_read] = '\0';
+            if (bytes_read == 0) {
+                break;  // End of input (EOF)
+            }
 
-            // Remove trailing newline if it exists
-            input[strcspn(input, "\n")] = 0;
+            total_read += bytes_read;
 
-            // Exit if user types "exit"
-            if (strcmp(input, "exit") == 0) {
+            // Break if a newline is encountered (full command is read)
+            if (strchr(input, '\n')) {
                 break;
             }
-
-            parse_and_execute(input, interactive);
         }
-    } else {  // Batch mode: We assume the first argument is a file
+
+        // Null-terminate the input string
+        input[total_read] = '\0';
+
+        // Remove trailing newline if it exists
+        input[strcspn(input, "\n")] = 0;
+
+        // Exit if user types "exit"
+        if (strcmp(input, "exit") == 0) {
+            break;
+        }
+
+        // Parse and execute the command
+        parse_and_execute(input, interactive);
+    }
+     }else {  // Batch mode: We assume the first argument is a file
         struct stat path_stat;
         if (stat(argv[1], &path_stat) == 0 && S_ISDIR(path_stat.st_mode)) {
             // If input is a directory, traverse and execute
