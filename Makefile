@@ -1,11 +1,14 @@
+CC      = gcc
+FLAGS   = -g -std=c99 -Wall -Wvla -Werror -fsanitize=address,undefined
+TARGET  = mysh
 
-CC     = gcc
-FLAGS = -g -std=c99 -Wall -Wvla -Werror -fsanitize=address,undefined
+# Default target: mysh
+all: $(TARGET)
 
-all: mysh
+# Build target
+$(TARGET): mysh.c
+	$(CC) $(FLAGS) -o $@ $^
 
-mysh: mysh.c
-		$(CC) $(FLAGS) -o $@ $^
-
+# Clean up build files
 clean:
-	rm -f *.o mysh
+	rm -f $(TARGET) *.o

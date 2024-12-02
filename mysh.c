@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -112,6 +113,7 @@ This function recursively traverses a directory which is specified by the path, 
 in a line-by-line format, removes any newline chars from each line, and then moves on to pass every line to the parse_and_execute function which would then execute in batch mode.
 Prints out an error message when a file cant be read in and is responsibel for handling one directory at a time. 
 */
+
 void traverse_and_execute(const char *path) {
     DIR *dir = opendir(path);
     if (!dir) {
@@ -120,14 +122,17 @@ void traverse_and_execute(const char *path) {
     }
     struct dirent *entry;
     char filepath[MAX_PATH_LEN];
+
     while ((entry = readdir(dir))) {
-        if (entry->d_type == DT_REG) {
-            snprintf(filepath, MAX_PATH_LEN, "%s/%s", path, entry->d_name);
+        snprintf(filepath, MAX_PATH_LEN, "%s/%s", path, entry->d_name);
+        struct stat path_stat;
+        if (stat(filepath, &path_stat) == 0 && S_ISREG(path_stat.st_mode)) {
             FILE *file = fopen(filepath, "r");
             if (!file) {
                 perror("Error opening file");
                 continue;
             }
+
             char input[MAX_CMD_LEN];
             while (fgets(input, MAX_CMD_LEN, file)) {
                 input[strcspn(input, "\n")] = 0; 
@@ -136,11 +141,9 @@ void traverse_and_execute(const char *path) {
             fclose(file);
         }
     }
+
     closedir(dir);
 }
-
-
-
 /*
 This function is responsible for processing input command strings. We store the input string into agruements which gets stored in the args array. 
 We utilize built in commands such as cd, pwd, exit and which, and handle them accordingly. For input and output redirection, we call the handle_redirection function.
@@ -356,7 +359,7 @@ void handle_pipe(char *input, int interactive) {
             prev_fd = pipe_fds[0];
     }
 }
-
+}
 /*
 This function is responsible for handling input and output redirection.
 It holds various error handling for things such as missing files or failing to open. 
@@ -448,7 +451,6 @@ void handle_which(char **args) {
         token = strtok(NULL, ":");
     }
 }
-
 void free_args(char **args, int count) {
     for (int i = 0; i < count; i++) {
         free(args[i]);
