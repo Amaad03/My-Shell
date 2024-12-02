@@ -112,6 +112,7 @@ int main(int argc, char **argv) {
     // Exit message only in interactive mode
     if (interactive) {
         printf("Exiting my shell.\n");
+
     }
 
     return 0;
@@ -392,8 +393,8 @@ void handle_redirection(char **args, int *stdin_fd, int *stdout_fd) {
 
 void change_directory(char *path) {
     if (chdir(path) == 0) {
-        // Store the previous cwd before changing it
-        getcwd(prev_cwd, MAX_PATH_LEN);
+        // Successfully changed directory, update the shell's directory state
+        getcwd(prev_cwd, MAX_PATH_LEN);  // Save the new directory
     } else {
         perror("cd failed");
     }
@@ -418,22 +419,18 @@ void handle_which(char **args) {
     }
 
     char *command = args[1];
-    char *path = getenv("PATH");
-    char *path_copy = strdup(path); // Create a copy of the PATH to avoid modifying the original
-    char *token = strtok(path_copy, ":");
+    char *directories[] = {"/usr/local/bin", "/usr/bin", "/bin"};
+    char full_path[MAX_PATH_LEN];
 
-    while (token != NULL) {
-        char full_path[MAX_PATH_LEN];
-        snprintf(full_path, MAX_PATH_LEN, "%s/%s", token, command);
-
+    for (int i = 0; i < 3; i++) {
+        snprintf(full_path, MAX_PATH_LEN, "%s/%s", directories[i], command);
         if (access(full_path, F_OK) == 0) {
             printf("%s\n", full_path);
-           
             return;
         }
-
-        token = strtok(NULL, ":");
     }
+
+    fprintf(stderr, "%s: command not found\n", command);
 }
 
 void free_args(char **args, int count) {
