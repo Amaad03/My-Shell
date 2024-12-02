@@ -29,6 +29,8 @@ void free_args(char **args, int count);
 void parse_and_execute(char *input, int interactive);
 void traverse_and_execute(const char *path);
 void handle_redirection(char **args, int *stdin_fd, int *stdout_fd);
+void free_expanded_args(char **expanded_args);
+
 
 int main(int argc, char **argv) {
     char input[MAX_CMD_LEN];
@@ -227,9 +229,9 @@ void execute_command(char **args, int interactive) {
             if (expanded_count > 0) {
                 args[i] = NULL; 
                 for (int j = 0; j < expanded_count; j++) {
-                    args[i++] = expanded_args[j];
+                    args[i + j] = expanded_args[j]; 
                 }
-                args[i] = NULL; 
+                args[i + expanded_count] = NULL; 
                 break;
             }
         }
@@ -242,17 +244,13 @@ void execute_command(char **args, int interactive) {
     }
 
     if (pid == 0) {
+        // Child process
         execvp(command, args);
         perror("Exec failed");
         exit(1);
     } else {
         int status;
         waitpid(pid, &status, 0);
-
-        if (expanded_count > 0) {
-            free_args(expanded_args, expanded_count);
-        }
-
         if (WIFEXITED(status)) {
             if (WEXITSTATUS(status) != 0) {
                 fprintf(stderr, "Command failed with exit code: %d\n", WEXITSTATUS(status));
@@ -260,9 +258,13 @@ void execute_command(char **args, int interactive) {
         } else if (WIFSIGNALED(status)) {
             fprintf(stderr, "Terminated by signal: %d\n", WTERMSIG(status));
         }
-
+   
+    if (expanded_args) {
+        free_expanded_args(expanded_args);
+    }
     }
 }
+
 
 
 /*
@@ -274,20 +276,40 @@ This function also returns the count, which is the # of matching files. Returnin
 */
 int wildcard_expansion(char *pattern, char ***expanded_args) {
     glob_t globbuf;
-    int i, count = 0;
+    int ret = glob(pattern, GLOB_NOCHECK, NULL, &globbuf);  // Removed GLOB_TILDE
 
-    if (glob(pattern, 0, NULL, &globbuf) == 0) {
-        *expanded_args = malloc(globbuf.gl_pathc * sizeof(char *));
-        for (i = 0; i < globbuf.gl_pathc; i++) {
-            (*expanded_args)[count++] = strdup(globbuf.gl_pathv[i]);
+    if (ret == 0) {
+        int count = 0;
+        *expanded_args = malloc((globbuf.gl_pathc + 1) * sizeof(char *)); // +1 for NULL termination
+        if (!*expanded_args) {
+            perror("malloc failed");
+            globfree(&globbuf);
+            return -1;  // Return an error code for memory allocation failure
         }
-    } else {
-        *expanded_args = malloc(sizeof(char *));
-        (*expanded_args)[count++] = strdup(pattern);
+
+        for (int i = 0; i < globbuf.gl_pathc; i++) {
+            (*expanded_args)[count++] = strdup(globbuf.gl_pathv[i]); // strdup allocates memory
+        }
+        (*expanded_args)[count] = NULL;  // Null-terminate the array
+
+        globfree(&globbuf);  // Free memory used by glob
+        return count;  // Return the count of expanded arguments
     }
 
-    globfree(&globbuf);  
-    return count;
+    // If glob fails or no matches found, return 0
+    return 0;
+}
+
+
+
+void free_expanded_args(char **expanded_args) {
+    if (expanded_args) {
+        for (int i = 0; expanded_args[i] != NULL; i++) {
+            free(expanded_args[i]);
+        }
+      
+        free(expanded_args);
+    }
 }
 
 /*
@@ -407,6 +429,9 @@ void handle_redirection(char **args, int *stdin_fd, int *stdout_fd) {
     }
 }
 
+
+
+
 void change_directory(char *path) {
     if (chdir(path) == 0) {
         getcwd(prev_cwd, MAX_PATH_LEN);
@@ -435,7 +460,17 @@ void handle_which(char **args) {
 
     char *command = args[1];
     char *path = getenv("PATH");
+    if (path == NULL) {
+        fprintf(stderr, "PATH environment variable not set\n");
+        return;
+    }
+    
     char *path_copy = strdup(path); 
+    if (path_copy == NULL) {
+        perror("strdup failed");
+        return;
+    }
+
     char *token = strtok(path_copy, ":");
 
     while (token != NULL) {
@@ -444,13 +479,17 @@ void handle_which(char **args) {
 
         if (access(full_path, F_OK) == 0) {
             printf("%s\n", full_path);
-           
+            free(path_copy); 
             return;
         }
 
         token = strtok(NULL, ":");
     }
+
+    free(path_copy);
 }
+
+
 void free_args(char **args, int count) {
     for (int i = 0; i < count; i++) {
         free(args[i]);
