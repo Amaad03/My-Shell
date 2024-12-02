@@ -163,7 +163,7 @@ void parse_and_execute(char *input, int interactive) {
 
     // Handle empty input
     if (arg_count == 0) return;
-
+    
     // Handle built-in commands
     if (strcmp(args[0], "cd") == 0) {
         if (arg_count != 2) {
@@ -258,25 +258,50 @@ void execute_command(char **args, int interactive) {
         } else if (WIFSIGNALED(status)) {
             fprintf(stderr, "Terminated by signal: %d\n", WTERMSIG(status));
         }
-
     }
 }
 
 int wildcard_expansion(char *pattern, char ***expanded_args) {
     glob_t globbuf;
-    int i, count = 0;
+    int count = 0;
 
+    // Clear previous glob data
+    memset(&globbuf, 0, sizeof(glob_t));
+
+    // Perform the wildcard expansion
     if (glob(pattern, 0, NULL, &globbuf) == 0) {
+        // Allocate memory for the matched file paths
         *expanded_args = malloc(globbuf.gl_pathc * sizeof(char *));
-        for (i = 0; i < globbuf.gl_pathc; i++) {
-            (*expanded_args)[count++] = strdup(globbuf.gl_pathv[i]);
+        if (*expanded_args == NULL) {
+            fprintf(stderr, "Memory allocation failed\n");
+            globfree(&globbuf);
+            return -1;
         }
+
+
+        // Copy each matched path
+        for (size_t i = 0; i < globbuf.gl_pathc; i++) {
+            (*expanded_args)[i] = strdup(globbuf.gl_pathv[i]);
+            if ((*expanded_args)[i] == NULL) {
+                fprintf(stderr, "Memory allocation failed for path %zu\n", i);
+                // Clean up previously allocated memory
+                for (size_t j = 0; j < i; j++) {
+                    free((*expanded_args)[j]);
+                }
+                free(*expanded_args);
+                globfree(&globbuf);
+                return -1;
+            }
+        }
+
+        count = globbuf.gl_pathc;
     } else {
-        *expanded_args = malloc(sizeof(char *));
-        (*expanded_args)[count++] = strdup(pattern);
+        printf("No files matched\n");
+        globfree(&globbuf);
+        return 0; // Return 0 to indicate no files matched
     }
 
-    globfree(&globbuf);  
+    globfree(&globbuf);
     return count;
 }
 
