@@ -1,5 +1,4 @@
-Amaad Rajpar - ar1879
-Dhruv Patel - dp1138
+
 
 Testing Strategy:
 The test plan consisted of both interactive and batch mode testing:
